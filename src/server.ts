@@ -9,10 +9,9 @@ const separador = "=".repeat(50)
 
 async function iniciarServidor() {
   try {
-    // Lazy loading: las conexiones solo se cargan cuando las llames
-    // const { ConexionSIGH, ConexionSIGHExterna } = await import("./config/database");
-    // await ConexionSIGH();
-    // await ConexionSIGHExterna();
+    const { ConexionSIGH, ConexionSIGHExterna } = await import("./config/database");
+    await ConexionSIGH();
+    await ConexionSIGHExterna();
 
     const app = iniciarApp();
 
@@ -23,10 +22,10 @@ async function iniciarServidor() {
       console.log(separador);
       console.log("🚀 SERVIDOR INICIADO CORRECTAMENTE");
       console.log(separador);
-      console.log(` • URL: http://${HOST}:${PORT}`);
-      console.log(` • Entorno: ${ENTORNO}`);
-      console.log(` • Runtime: Bun ${Bun.version}`);
       console.log(` • Framework: ElysiaJS`);
+      console.log(` • URL:       http://${HOST}:${PORT}`);
+      console.log(` • Entorno:   ${ENTORNO}`);
+      console.log(` • Runtime:   Bun ${Bun.version}`);
       console.log(" • CORS Configuración:");
       if (origenesCors.includes("*")) {
         console.log("   - CORS configurado para permitir todos los orígenes (CORS: *)");
