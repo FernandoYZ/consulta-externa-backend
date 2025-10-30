@@ -5,12 +5,14 @@ import { configurarSeguridad } from "./middlewares/security.app";
 import { configurarPublic } from "./middlewares/public.app";
 import { iniciarRutas } from "./routes/app";
 import { configurarCors } from "./middlewares/cors.app";
+import { handlerErrores } from "./handlers/error";
 
 export function iniciarApp() {
   const app = new Elysia();
 
   // Todos los middlewares ahora son nativos y síncronos
   app
+    .use(handlerErrores)
     .use(configurarCors)
     .use(configurarSeguridad)
     .use(configurarCookies)
