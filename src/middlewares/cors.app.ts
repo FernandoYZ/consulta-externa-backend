@@ -22,7 +22,7 @@ export const configurarCors = (app: Elysia) => {
     // Manejar preflight requests
     if (request.method === "OPTIONS") {
       set.status = 204;
-      return new Response(null, { status: 204 });
+      return;
     }
   });
 };
