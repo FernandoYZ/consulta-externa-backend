@@ -1,6 +1,13 @@
 // src/config/database.ts
 import type { ConnectionPool, config as SqlConfig, IResult, IProcedureResult } from "mssql";
 import { logger } from "../utils/logger";
+import {
+  inferirTipoSQL,
+  procesarResultado,
+  type ParamSQL,
+  type ParamSalidaSQL,
+  type ResultadoSP
+} from "../utils/database.util";
 
 const opciones: SqlConfig["options"] = {
   encrypt: false,
@@ -60,9 +67,6 @@ export const ConexionSIGH = async (): Promise<ConnectionPool> => {
   }
 };
 
-/**
- * Obtiene la conexión al pool secundario (SIGHExterna)
- */
 export const ConexionSIGHExterna = async (): Promise<ConnectionPool> => {
   try {
     if (poolSighExterna && poolSighExterna.connected) return poolSighExterna;
@@ -90,9 +94,6 @@ export const ConexionSIGHExterna = async (): Promise<ConnectionPool> => {
   }
 };
 
-/**
- * Cierra todas las conexiones de forma segura
- */
 export const cerrarConexiones = async (): Promise<void> => {
   const errores: Error[] = [];
 
@@ -124,54 +125,82 @@ export const cerrarConexiones = async (): Promise<void> => {
   }
 };
 
-/**
- * Helper para ejecutar queries de forma segura con manejo de errores
- */
 export async function ejecutarQuery<T = any>(
-  query: string,
-  params: Record<string, any> = {},
-  usarPoolExterno: boolean = false
-): Promise<T[]> {
-  const pool = usarPoolExterno ? await ConexionSIGHExterna() : await ConexionSIGH();
-
-  try {
-    const request = pool.request();
-
-    // Agregar parámetros de forma segura
-    for (const [key, value] of Object.entries(params)) {
-      request.input(key, value);
-    }
-
-    const result: IResult<T> = await request.query(query);
-    return result.recordset || [];
-  } catch (error) {
-    await logger.error(`Error ejecutando query: ${query.substring(0, 100)}...`, error as Error);
-    throw error;
-  }
-}
-
-/**
- * Helper para ejecutar stored procedures
- */
-export async function ejecutarSP<T = any>(
-  SpNombre: string,
-  params: Record<string, any> = {},
-  usarPoolExterno: boolean = false
-): Promise<T[]> {
+  consulta: string,
+  parametros: Record<string, any | ParamSQL> = {},
+  usarPoolExterno: boolean = false,
+  retornarPrimero: boolean = false
+): Promise<T[] | T | null> {
   const pool = usarPoolExterno ? await ConexionSIGHExterna() : await ConexionSIGH();
 
   try {
     const request = pool.request();
 
     // Agregar parámetros
-    for (const [key, value] of Object.entries(params)) {
-      request.input(key, value);
+    for (const [clave, param] of Object.entries(parametros)) {
+      if (param && typeof param === 'object' && 'tipo' in param && 'valor' in param) {
+        // Parámetro con tipo explícito
+        request.input(clave, param.tipo, param.valor);
+      } else {
+        // Auto-detección
+        const tipoInferido = await inferirTipoSQL(param);
+        request.input(clave, tipoInferido, param);
+      }
     }
 
-    const result: IProcedureResult<T> = await request.execute(SpNombre);
-    return result.recordset || [];
+    const resultado: IResult<T> = await request.query(consulta);
+    return procesarResultado(resultado.recordset, retornarPrimero);
+
   } catch (error) {
-    await logger.error(`Error ejecutando SP: ${SpNombre}`, error as Error);
+    await logger.error(`Error ejecutando query: ${consulta.substring(0, 100)}...`, error as Error);
+    throw error;
+  }
+}
+
+export async function ejecutarSP<T = any>(
+  nombreSP: string,
+  parametrosEntrada: Record<string, any | ParamSQL> = {},
+  parametrosSalida: Record<string, ParamSalidaSQL> = {},
+  usarPoolExterno: boolean = false,
+  retornarPrimero: boolean = false
+): Promise<T[] | T | null | ResultadoSP<T>> {
+  const pool = usarPoolExterno ? await ConexionSIGHExterna() : await ConexionSIGH();
+  const tieneSalida = Object.keys(parametrosSalida).length > 0;
+
+  try {
+    const request = pool.request();
+
+    // Agregar parámetros de entrada
+    for (const [clave, param] of Object.entries(parametrosEntrada)) {
+      if (param && typeof param === 'object' && 'tipo' in param && 'valor' in param) {
+        request.input(clave, param.tipo, param.valor);
+      } else {
+        const tipoInferido = await inferirTipoSQL(param);
+        request.input(clave, tipoInferido, param);
+      }
+    }
+
+    // Agregar parámetros de salida
+    for (const [clave, param] of Object.entries(parametrosSalida)) {
+      request.output(clave, param.tipo);
+    }
+
+    const resultado: IProcedureResult<T> = await request.execute(nombreSP);
+
+    // Si tiene parámetros de salida, retornar resultado completo
+    if (tieneSalida) {
+      return {
+        recordset: resultado.recordset || [],
+        output: resultado.output,
+        returnValue: resultado.returnValue
+      };
+    }
+
+    // Si no tiene salida, comportamiento normal
+    return procesarResultado(resultado.recordset, retornarPrimero);
+
+  } catch (error) {
+    await logger.error(`Error ejecutando SP: ${nombreSP}`, error as Error);
     throw error;
   }
 }
