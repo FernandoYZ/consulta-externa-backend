@@ -1,33 +1,32 @@
 import { Elysia } from "elysia";
+import { logger } from "../utils/logger";
 
 const esProduccion = process.env.NODE_ENV === "production";
+const habilitarLogs = process.env.ENABLE_LOGS !== "false";
+
+// Respuestas pre-construidas para errores comunes (más rápido)
+const RESPUESTAS_ERROR = {
+  NOT_FOUND: { success: false, mensaje: "Recurso no encontrado" },
+  PARSE: { success: false, mensaje: "Formato de datos incorrecto" },
+  INTERNAL: { success: false, mensaje: "Error interno del servidor. Por favor, inténtelo de nuevo más tarde." },
+} as const;
 
 export const handlerError = (app: Elysia) => {
   app.onError(({ code, error, set, request }) => {
     set.headers["Content-Type"] = "application/json; charset=utf-8";
 
-    // Obtener datos del request
-    const logData = (request as any).__logData || {
-      method: request.method,
-      url: new URL(request.url).pathname,
-    };
-    const startTime = (request as any).__startTime || performance.now();
-    const duration = (performance.now() - startTime).toFixed(3);
-
-    // Preparar respuesta según el tipo de error
     let errorResponse: any;
+    let status: number;
 
+    // Switch optimizado con respuestas pre-construidas
     switch (code) {
       case "NOT_FOUND":
-        set.status = 404;
-        errorResponse = {
-          success: false,
-          mensaje: "Recurso no encontrado",
-        };
+        status = 404;
+        errorResponse = RESPUESTAS_ERROR.NOT_FOUND;
         break;
 
       case "VALIDATION":
-        set.status = 400;
+        status = 400;
         errorResponse = {
           success: false,
           mensaje: "Datos de entrada inválidos",
@@ -36,57 +35,72 @@ export const handlerError = (app: Elysia) => {
         break;
 
       case "PARSE":
-        set.status = 400;
-        errorResponse = {
-          success: false,
-          mensaje: "Formato de datos incorrecto",
-        };
+        status = 400;
+        errorResponse = RESPUESTAS_ERROR.PARSE;
         break;
 
       case "INTERNAL_SERVER_ERROR":
       case "UNKNOWN":
       default:
-        set.status = 500;
-        errorResponse = {
-          success: false,
-          mensaje: esProduccion
-            ? "Error interno del servidor. Por favor, inténtelo de nuevo más tarde."
-            : `Error: ${error instanceof Error ? error.message : 'Error desconocido'}`,
-        };
+        status = 500;
+        errorResponse = esProduccion
+          ? RESPUESTAS_ERROR.INTERNAL
+          : {
+              success: false,
+              mensaje: `Error: ${error instanceof Error ? error.message : 'Error desconocido'}`,
+            };
         break;
     }
 
-    // Logging según el entorno
-    const status = set.status || 500;
-    const esErrorCritico = code === "INTERNAL_SERVER_ERROR" || code === "UNKNOWN" || status >= 500;
+    set.status = status;
 
-    if (esProduccion) {
-      // Producción: formato simple
-      console.log(
-        `[${new Date().toISOString().replace('T', ' ').substring(0, 19)}] ${logData.method} ${status} ${logData.url} ${duration}ms`
+    // Obtener datos del request
+    const logData = (request as any).__logData || {
+      method: request.method,
+      url: new URL(request.url).pathname,
+    };
+    const startTime = (request as any).__startTime || Bun.nanoseconds();
+    const duration = ((Bun.nanoseconds() - startTime) / 1_000_000).toFixed(2);
+
+    // Registrar errores críticos en archivo (siempre)
+    if (status >= 500) {
+      logger.error(
+        `${logData.method} ${status} ${logData.url} (${duration}ms)`,
+        error
       );
-    } else {
-      // Desarrollo: formato detallado
-      console.log(`\n[${new Date().toISOString().replace('T', ' ').substring(0, 19)}] ${logData.url}`);
-      console.log(`    metodo: ${logData.method}`);
-      console.log(`    estado: ${status}`);
-      console.log(`    response: ${JSON.stringify(errorResponse, null, 8)}`);
+    } else if (status >= 400) {
+      // Warnings para errores de cliente
+      logger.warn(`${logData.method} ${status} ${logData.url} - ${errorResponse.mensaje}`);
+    }
 
-      // Mostrar body si existe
-      const bodyValue = (logData as any).body !== undefined && (logData as any).body !== null
-        ? (typeof (logData as any).body === 'string' ? (logData as any).body : JSON.stringify((logData as any).body, null, 8))
-        : 'null';
-      console.log(`    body: ${bodyValue}`);
-      console.log(`    tiempo: ${duration}ms`);
+    // Logging en consola (solo si está habilitado)
+    if (habilitarLogs) {
+      if (esProduccion) {
+        // Producción: log simple
+        console.log(`${new Date().toISOString().substring(11, 19)} ${logData.method} ${status} ${logData.url}`);
+      } else {
+        // Desarrollo: log detallado
+        console.log(`\n[${new Date().toISOString().substring(11, 19)}] ${logData.url}`);
+        console.log(`    metodo: ${logData.method}`);
+        console.log(`    estado: ${status}`);
+        console.log(`    response: ${JSON.stringify(errorResponse, null, 8)}`);
 
-      // Detalles del error solo para errores críticos
-      if (esErrorCritico) {
-        console.log(`    error: ${error instanceof Error ? error.message : String(error)}`);
-        if (error instanceof Error && error.stack) {
-          console.log(`    stack: ${error.stack}`);
+        if ((logData as any).body !== undefined) {
+          const bodyValue = typeof (logData as any).body === 'string'
+            ? (logData as any).body
+            : JSON.stringify((logData as any).body, null, 8);
+          console.log(`    body: ${bodyValue}`);
         }
+
+        console.log(`    tiempo: ${duration}ms`);
+
+        // Stack trace solo para errores críticos
+        if (status >= 500 && error instanceof Error) {
+          console.log(`    error: ${error.message}`);
+          if (error.stack) console.log(`    stack: ${error.stack}`);
+        }
+        console.log('');
       }
-      console.log('');
     }
 
     return errorResponse;
