@@ -1,55 +1,91 @@
-import type { Paciente, PacienteBody } from "./pacientes.types";
-// import sql from 'mssql'; // Así importarías el driver de mssql
+// src/modules/pacientes/pacientes.repository.ts
+import type { Paciente, Atencion, Triaje } from "./pacientes.types";
+import { ejecutarQuery } from "../../config/database";
+import { QUERY_PACIENTE, QUERY_ATENCION, QUERY_TRIAJE } from "../../queries/imprimir.query";
 
-// Simulación de una conexión a la base de datos.
-// En un proyecto real, esto vendría de una configuración central.
-const dbConfig = {
-  /* ... tu configuración de mssql ... */
-};
-
+/**
+ * Repositorio para datos de pacientes
+ * Usa las queries optimizadas de imprimir.query.ts
+ */
 export class PacientesRepository {
   /**
-   * Obtiene todos los pacientes de la base de datos.
+   * Obtiene los datos del paciente por ID de cuenta de atención
+   * Usa QUERY_PACIENTE de imprimir.query.ts
    */
-  async getAll(): Promise<Paciente[]> {
-    console.log("REPOSITORY: Obteniendo todos los pacientes desde la DB...");
-    // const pool = await sql.connect(dbConfig);
-    // const result = await pool.request().query('SELECT id, nombre, apellido, fechaNacimiento, telefono FROM Pacientes');
-    // return result.recordset;
-    return []; // Simulación: devolver un array vacío
+  async obtenerDatosPaciente(idCuentaAtencion: number): Promise<Paciente | null> {
+    try {
+      const resultado = await ejecutarQuery<Paciente>(
+        QUERY_PACIENTE,
+        { idCuentaAtencion }
+      );
+
+      return resultado[0] || null;
+    } catch (error) {
+      console.error(`[Repository] Error obteniendo datos del paciente (cuenta: ${idCuentaAtencion}):`, error);
+      throw error;
+    }
   }
 
   /**
-   * Busca un paciente por su ID.
+   * Obtiene los datos de la atención
+   * Usa QUERY_ATENCION de imprimir.query.ts
    */
-  async getById(id: number): Promise<Paciente | undefined> {
-    console.log(`REPOSITORY: Buscando paciente con ID ${id} en la DB...`);
-    // const pool = await sql.connect(dbConfig);
-    // const result = await pool.request()
-    //   .input('id', sql.Int, id)
-    //   .query('SELECT * FROM Pacientes WHERE id = @id');
-    // return result.recordset[0];
-    return undefined; // Simulación: no encontrado
+  async obtenerDatosAtencion(idCuentaAtencion: number): Promise<Atencion | null> {
+    try {
+      const resultado = await ejecutarQuery<Atencion>(
+        QUERY_ATENCION,
+        { idCuentaAtencion }
+      );
+
+      return resultado[0] || null;
+    } catch (error) {
+      console.error(`[Repository] Error obteniendo datos de atención (cuenta: ${idCuentaAtencion}):`, error);
+      throw error;
+    }
   }
 
   /**
-   * Crea un nuevo paciente en la base de datos.
+   * Obtiene los datos del triaje
+   * Usa QUERY_TRIAJE de imprimir.query.ts
+   * NOTA: Esta query usa SIGH_EXTERNA
    */
-  async create(data: PacienteBody): Promise<Paciente> {
-    console.log("REPOSITORY: Creando nuevo paciente en la DB...", data);
-    // const pool = await sql.connect(dbConfig);
-    // const result = await pool.request()
-    //   .input('nombre', sql.NVarChar, data.nombre)
-    //   .input('apellido', sql.NVarChar, data.apellido)
-    //   .input('fechaNacimiento', sql.Date, data.fechaNacimiento)
-    //   .input('telefono', sql.NVarChar, data.telefono)
-    //   .query('INSERT INTO Pacientes (nombre, apellido, fechaNacimiento, telefono) OUTPUT INSERTED.* VALUES (@nombre, @apellido, @fechaNacimiento, @telefono)');
-    // return result.recordset[0];
+  async obtenerDatosTriaje(idCuentaAtencion: number): Promise<Triaje | null> {
+    try {
+      // usarPoolExterno = true porque QUERY_TRIAJE usa SIGH_EXTERNA
+      const resultado = await ejecutarQuery<Triaje>(
+        QUERY_TRIAJE,
+        { idCuentaAtencion },
+        true // Usar pool externo
+      );
 
-    // Simulación: devolver el paciente creado con un ID falso
-    const nuevoPaciente: Paciente = { id: 99, ...data };
-    return nuevoPaciente;
+      return resultado[0] || null;
+    } catch (error) {
+      console.error(`[Repository] Error obteniendo datos de triaje (cuenta: ${idCuentaAtencion}):`, error);
+      throw error;
+    }
   }
 
-  // Aquí irían los métodos para update() y delete() de forma similar...
+  /**
+   * Obtiene todos los datos del paciente en una sola llamada
+   * Ejecuta las 3 queries en paralelo para máximo rendimiento
+   */
+  async obtenerDatosCompletos(idCuentaAtencion: number) {
+    try {
+      // Ejecutar las 3 queries en paralelo con Promise.all (más rápido)
+      const [paciente, atencion, triaje] = await Promise.all([
+        this.obtenerDatosPaciente(idCuentaAtencion),
+        this.obtenerDatosAtencion(idCuentaAtencion),
+        this.obtenerDatosTriaje(idCuentaAtencion),
+      ]);
+
+      return {
+        paciente,
+        atencion,
+        triaje,
+      };
+    } catch (error) {
+      console.error(`[Repository] Error obteniendo datos completos (cuenta: ${idCuentaAtencion}):`, error);
+      throw error;
+    }
+  }
 }
