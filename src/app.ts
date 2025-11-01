@@ -1,6 +1,5 @@
 // src/app.ts
 import { Elysia } from "elysia";
-import { configurarCookies } from "./middlewares/cookies.app";
 import { configurarSeguridad } from "./middlewares/security.app";
 import { configurarPublic } from "./middlewares/public.app";
 import { iniciarRutas } from "./routes/app";
@@ -9,17 +8,19 @@ import { handlerError } from "./handlers/error";
 import { configurarLogger } from "./plugins/logger";
 
 export function iniciarApp() {
-  const app = new Elysia();
+  const app = new Elysia({
+    aot: true,
+    normalize: true,
+  });
 
   handlerError(app);
 
-  app
-    .use(configurarLogger)
-    .use(configurarCors)
-    .use(configurarSeguridad)
-    .use(configurarCookies)
-    .use(configurarPublic);
+  app.use(configurarCors);
+  app.use(configurarSeguridad);
+  app.use(configurarLogger);
+  app.use(configurarPublic);
 
+  // Rutas de la API
   iniciarRutas(app);
 
   return app;
