@@ -14,12 +14,12 @@ export class PacientesRepository {
    */
   async obtenerDatosPaciente(idCuentaAtencion: number): Promise<Paciente | null> {
     try {
-      const resultado = await ejecutarQuery<Paciente>(
+      return await ejecutarQuery<Paciente>(
         QUERY_PACIENTE,
-        { idCuentaAtencion }
-      );
-
-      return resultado[0] || null;
+        { idCuentaAtencion },
+        false, // usarPoolExterno
+        true   // retornarPrimero - retorna null si no hay datos
+      ) as Paciente | null;
     } catch (error) {
       console.error(`[Repository] Error obteniendo datos del paciente (cuenta: ${idCuentaAtencion}):`, error);
       throw error;
@@ -32,12 +32,12 @@ export class PacientesRepository {
    */
   async obtenerDatosAtencion(idCuentaAtencion: number): Promise<Atencion | null> {
     try {
-      const resultado = await ejecutarQuery<Atencion>(
+      return await ejecutarQuery<Atencion>(
         QUERY_ATENCION,
-        { idCuentaAtencion }
-      );
-
-      return resultado[0] || null;
+        { idCuentaAtencion },
+        false, // usarPoolExterno
+        true   // retornarPrimero - retorna null si no hay datos
+      ) as Atencion | null;
     } catch (error) {
       console.error(`[Repository] Error obteniendo datos de atención (cuenta: ${idCuentaAtencion}):`, error);
       throw error;
@@ -51,14 +51,12 @@ export class PacientesRepository {
    */
   async obtenerDatosTriaje(idCuentaAtencion: number): Promise<Triaje | null> {
     try {
-      // usarPoolExterno = true porque QUERY_TRIAJE usa SIGH_EXTERNA
-      const resultado = await ejecutarQuery<Triaje>(
+      return await ejecutarQuery<Triaje>(
         QUERY_TRIAJE,
         { idCuentaAtencion },
-        true // Usar pool externo
-      );
-
-      return resultado[0] || null;
+        true, // usarPoolExterno (SIGH_EXTERNA)
+        true  // retornarPrimero - retorna null si no hay datos
+      ) as Triaje | null;
     } catch (error) {
       console.error(`[Repository] Error obteniendo datos de triaje (cuenta: ${idCuentaAtencion}):`, error);
       throw error;
